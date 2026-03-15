@@ -1,0 +1,109 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users
+    // Fields: uid, name, email, role
+    //
+    // Collection: students
+    // Fields: name, email (optional), studentId, classroomId, status
+    //
+    // Collection: classrooms
+    // Fields: grade, section, subjects, teacherUid
+    //
+    // Collection: attendance
+    // Fields: classroomId, date, statuses, notes
+    //
+    // Collection: teachingLogs
+    // Fields: teacherUid, date, subject, topic, notes, studentIds
+    //
+    // Collection: mentoringLogs
+    // Fields: mentorUid, studentUid, date, focusArea, discussionPoints, actionItems
+    //
+    // Collection: progressReports
+    // Fields: studentUid, date, academicPerformance, attendance, behavioralNotes, overallProgress
+    //
+    // Collection: reflections
+    // Fields: userUid, date, category, content, improvementPlan
+    //
+    // ===============================================================
+
+    // Helper Functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && 
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+         (request.auth.token.email == "sahil.bhattarai46@gmail.com" && request.auth.token.email_verified == true));
+    }
+
+    function isTeacher() {
+      return isAuthenticated() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'teacher';
+    }
+
+    function isMentor() {
+      return isAuthenticated() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'mentor';
+    }
+
+    // Users collection
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow create: if isOwner(userId) && request.resource.data.role == 'teacher'; // Default to teacher
+      allow update: if isOwner(userId) || isAdmin();
+    }
+
+    // Students collection
+    match /students/{studentId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin() || isTeacher() || isMentor();
+    }
+
+    // Classrooms collection
+    match /classrooms/{classroomId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin() || isTeacher();
+    }
+
+    // Attendance collection
+    match /attendance/{attendanceId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin() || isTeacher();
+    }
+
+    // Teaching Logs
+    match /teachingLogs/{logId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && request.resource.data.teacherUid == request.auth.uid;
+      allow update, delete: if isAuthenticated() && (resource.data.teacherUid == request.auth.uid || isAdmin());
+    }
+
+    // Mentoring Logs
+    match /mentoringLogs/{logId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && request.resource.data.mentorUid == request.auth.uid;
+      allow update, delete: if isAuthenticated() && (resource.data.mentorUid == request.auth.uid || isAdmin());
+    }
+
+    // Progress Reports
+    match /progressReports/{reportId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin() || isTeacher() || isMentor();
+    }
+
+    // Reflections
+    match /reflections/{reflectionId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && request.resource.data.userUid == request.auth.uid;
+      allow update, delete: if isAuthenticated() && (resource.data.userUid == request.auth.uid || isAdmin());
+    }
+  }
+}

@@ -1,0 +1,118 @@
+{
+  "entities": {
+    "students": {
+      "title": "Student",
+      "description": "Basic information about a student.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "description": "Full name of the student" },
+        "email": { "type": "string", "format": "email", "description": "Student email address (optional)" },
+        "studentId": { "type": "string", "description": "Unique institutional ID" },
+        "classroomId": { "type": "string", "description": "ID of the classroom the student belongs to" },
+        "status": { "type": "string", "enum": ["active", "graduated", "inactive"], "description": "Current enrollment status" }
+      },
+      "required": ["name", "studentId", "classroomId"]
+    },
+    "classrooms": {
+      "title": "Classroom",
+      "description": "A classroom or grade level.",
+      "type": "object",
+      "properties": {
+        "grade": { "type": "number", "description": "Grade level (6-10)" },
+        "section": { "type": "string", "description": "Section identifier (e.g. A, B, Science)" },
+        "subjects": { "type": "array", "items": { "type": "string" }, "description": "List of subjects taught in this class" },
+        "teacherUid": { "type": "string", "description": "UID of the primary teacher" }
+      },
+      "required": ["grade", "section", "subjects", "teacherUid"]
+    },
+    "attendance": {
+      "title": "Attendance Record",
+      "description": "Daily attendance for a classroom.",
+      "type": "object",
+      "properties": {
+        "classroomId": { "type": "string", "description": "ID of the classroom" },
+        "date": { "type": "string", "format": "date", "description": "Date of attendance" },
+        "statuses": { "type": "object", "description": "Map of student IDs to their attendance status" },
+        "notes": { "type": "string", "description": "Optional notes for the day" }
+      },
+      "required": ["classroomId", "date", "statuses"]
+    },
+    "teachingLogs": {
+      "title": "Teaching Log",
+      "description": "Documentation of a teaching session.",
+      "type": "object",
+      "properties": {
+        "teacherUid": { "type": "string", "description": "UID of the teacher" },
+        "date": { "type": "string", "format": "date-time", "description": "Date and time of the session" },
+        "subject": { "type": "string", "description": "Subject taught" },
+        "topic": { "type": "string", "description": "Specific topic covered" },
+        "notes": { "type": "string", "description": "Detailed teaching notes" },
+        "studentIds": { "type": "array", "items": { "type": "string" }, "description": "List of student IDs present" }
+      },
+      "required": ["teacherUid", "date", "subject", "topic"]
+    },
+    "mentoringLogs": {
+      "title": "Mentoring Log",
+      "description": "Documentation of a mentoring session.",
+      "type": "object",
+      "properties": {
+        "mentorUid": { "type": "string", "description": "UID of the mentor" },
+        "studentUid": { "type": "string", "description": "UID of the student being mentored" },
+        "date": { "type": "string", "format": "date-time", "description": "Date and time of the session" },
+        "focusArea": { "type": "string", "description": "Main area of focus (e.g., academic, career, personal)" },
+        "discussionPoints": { "type": "string", "description": "Key points discussed" },
+        "actionItems": { "type": "string", "description": "Agreed upon next steps" }
+      },
+      "required": ["mentorUid", "studentUid", "date", "focusArea"]
+    },
+    "progressReports": {
+      "title": "Progress Report",
+      "description": "Tracking of student progress over time.",
+      "type": "object",
+      "properties": {
+        "studentUid": { "type": "string", "description": "UID of the student" },
+        "date": { "type": "string", "format": "date-time", "description": "Date of the report" },
+        "academicPerformance": { "type": "string", "description": "Summary of academic standing" },
+        "attendance": { "type": "number", "description": "Attendance percentage" },
+        "behavioralNotes": { "type": "string", "description": "Notes on behavior and participation" },
+        "overallProgress": { "type": "string", "enum": ["excellent", "good", "satisfactory", "needs-improvement"], "description": "Overall progress assessment" }
+      },
+      "required": ["studentUid", "date", "overallProgress"]
+    },
+    "reflections": {
+      "title": "Reflection & Review",
+      "description": "Documentation of reflection, review, and improvement processes.",
+      "type": "object",
+      "properties": {
+        "userUid": { "type": "string", "description": "UID of the staff member" },
+        "date": { "type": "string", "format": "date-time", "description": "Date of reflection" },
+        "category": { "type": "string", "enum": ["teaching", "mentoring", "process-improvement"], "description": "Category of reflection" },
+        "content": { "type": "string", "description": "The reflection content" },
+        "improvementPlan": { "type": "string", "description": "Proposed steps for improvement" }
+      },
+      "required": ["userUid", "date", "category", "content"]
+    },
+    "users": {
+      "title": "User Profile",
+      "description": "Profile information for teachers, mentors, and staff.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "Firebase Auth UID" },
+        "name": { "type": "string", "description": "Full name" },
+        "email": { "type": "string", "format": "email", "description": "Email address" },
+        "role": { "type": "string", "enum": ["teacher", "mentor", "admin"], "description": "User role" }
+      },
+      "required": ["uid", "name", "email", "role"]
+    }
+  },
+  "firestore": {
+    "students": { "schema": "students", "description": "Collection of student records" },
+    "classrooms": { "schema": "classrooms", "description": "Collection of classrooms" },
+    "attendance": { "schema": "attendance", "description": "Collection of attendance records" },
+    "teachingLogs": { "schema": "teachingLogs", "description": "Collection of teaching documentation" },
+    "mentoringLogs": { "schema": "mentoringLogs", "description": "Collection of mentoring session logs" },
+    "progressReports": { "schema": "progressReports", "description": "Collection of student progress tracking reports" },
+    "reflections": { "schema": "reflections", "description": "Collection of reflection and review processes" },
+    "users": { "schema": "users", "description": "Collection of user profiles" }
+  }
+}
