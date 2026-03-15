@@ -1,11 +1,12 @@
 { pkgs, ... }: {
   # Which nixpkgs channel to use.
-  channel = "stable-24.05"; # or "unstable"
+  channel = "unstable"; # or "stable-24.05"
 
   # Use https://search.nixos.org/packages to find packages
   packages = [
     pkgs.nodejs_20
     pkgs.firebase-tools
+    pkgs.unzip
   ];
 
   # Sets environment variables in the workspace
@@ -18,14 +19,12 @@
       "bradlc.vscode-tailwindcss"
     ];
 
-    # Enable previews
+    # Enable previews and customize configuration
     previews = {
       enable = true;
       previews = {
         web = {
-          # Example: run "npm run dev" with PORT set to IDX's defined port for previews,
-          # and configure it to listen on all interfaces
-          command = ["npm", "run", "dev", "--", "--port", "$PORT", "--host", "0.0.0.0"];
+          command = [ "npm" "run" "dev" "--" "--port" "$PORT" "--host" "0.0.0.0" ];
           manager = "web";
         };
       };

@@ -125,7 +125,7 @@ export default function App() {
         return;
       }
       
-      console.error("Login failed:", error);
+      console.error("Login failed:", error.code, error.message, JSON.stringify(error));
       
       // If popup is blocked or fails in a way that suggests a redirect might be needed
       if (error.code === 'auth/popup-blocked') {
