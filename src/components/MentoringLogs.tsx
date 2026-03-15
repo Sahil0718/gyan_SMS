@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { collection, onSnapshot, addDoc, query, orderBy } from 'firebase/firestore';
+import { collection, onSnapshot, addDoc, query, orderBy, where } from 'firebase/firestore';
 import { db } from '../firebase';
 import { MentoringLog, Student, UserProfile } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
@@ -7,13 +7,26 @@ import { Plus, MessageSquare, Calendar, X, User } from 'lucide-react';
 
 interface Props {
   profile: UserProfile | null;
+  searchTerm: string;
+  onSearch: (term: string) => void;
 }
 
-export default function MentoringLogs({ profile }: Props) {
+export default function MentoringLogs({ profile, searchTerm, onSearch }: Props) {
   const [logs, setLogs] = useState<MentoringLog[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
   const [classrooms, setClassrooms] = useState<any[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
+
+  const filteredLogs = logs.filter(log => {
+    const textMatch = (log.focusArea || '').toLowerCase().includes(searchTerm.toLowerCase()) || 
+                      (log.discussionPoints || '').toLowerCase().includes(searchTerm.toLowerCase()) || 
+                      (log.actionItems || '').toLowerCase().includes(searchTerm.toLowerCase());
+    
+    const student = students.find(s => s.id === log.studentUid);
+    const studentMatch = (student?.name || '').toLowerCase().includes(searchTerm.toLowerCase());
+    
+    return textMatch || studentMatch;
+  });
 
   const [formData, setFormData] = useState({
     studentUid: '',
@@ -24,22 +37,42 @@ export default function MentoringLogs({ profile }: Props) {
   });
 
   useEffect(() => {
-    const q = query(collection(db, 'mentoringLogs'), orderBy('date', 'desc'));
+    if (!profile?.uid) {
+      setLogs([]);
+      setStudents([]);
+      setClassrooms([]);
+      return;
+    }
+
+    const q = query(
+      collection(db, 'mentoringLogs'),
+      where('mentorUid', '==', profile.uid),
+      orderBy('date', 'desc')
+    );
     const unsubscribe = onSnapshot(q, (snap) => {
       setLogs(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as MentoringLog)));
     });
-    const unsubStudents = onSnapshot(collection(db, 'students'), (snap) => {
-      setStudents(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Student)));
+    const studentsQuery = query(collection(db, 'students'), where('ownerUid', '==', profile.uid));
+    const unsubStudents = onSnapshot(studentsQuery, (snap) => {
+      const studentData = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Student));
+      studentData.sort((a, b) => a.name.localeCompare(b.name));
+      setStudents(studentData);
     });
-    const unsubClassrooms = onSnapshot(collection(db, 'classrooms'), (snap) => {
-      setClassrooms(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    const classroomsQuery = query(collection(db, 'classrooms'), where('teacherUid', '==', profile.uid));
+    const unsubClassrooms = onSnapshot(classroomsQuery, (snap) => {
+      const classroomData = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      classroomData.sort((a: any, b: any) => {
+        if (a.grade !== b.grade) return a.grade - b.grade;
+        return (a.section || '').localeCompare(b.section || '');
+      });
+      setClassrooms(classroomData);
     });
     return () => {
       unsubscribe();
       unsubStudents();
       unsubClassrooms();
     };
-  }, []);
+  }, [profile?.uid]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -73,7 +106,7 @@ export default function MentoringLogs({ profile }: Props) {
       </div>
 
       <div className="grid grid-cols-1 gap-6">
-        {logs.map((log) => {
+        {filteredLogs.map((log) => {
           const student = students.find(s => s.id === log.studentUid);
           return (
             <motion.div 
@@ -123,7 +156,7 @@ export default function MentoringLogs({ profile }: Props) {
             </motion.div>
           );
         })}
-        {logs.length === 0 && (
+        {filteredLogs.length === 0 && (
           <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center text-slate-500 font-medium">
             No mentoring logs recorded yet.
           </div>

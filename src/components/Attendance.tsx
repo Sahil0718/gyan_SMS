@@ -8,9 +8,10 @@ import Toast from './Toast';
 
 interface AttendanceProps {
   profile: UserProfile | null;
+  searchTerm: string;
 }
 
-export default function Attendance({ profile }: AttendanceProps) {
+export default function Attendance({ profile, searchTerm }: AttendanceProps) {
   const [classrooms, setClassrooms] = useState<Classroom[]>([]);
   const [selectedClass, setSelectedClass] = useState<Classroom | null>(null);
   const [students, setStudents] = useState<Student[]>([]);
@@ -21,17 +22,34 @@ export default function Attendance({ profile }: AttendanceProps) {
   const [showToast, setShowToast] = useState(false);
 
   useEffect(() => {
-    const unsubscribe = onSnapshot(collection(db, 'classrooms'), (snap) => {
-      setClassrooms(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Classroom)));
+    if (!profile?.uid) {
+      setClassrooms([]);
+      return;
+    }
+
+    const classroomsQuery = query(collection(db, 'classrooms'), where('teacherUid', '==', profile.uid));
+    const unsubscribe = onSnapshot(classroomsQuery, (snap) => {
+      const classroomData = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Classroom));
+      classroomData.sort((a, b) => {
+        if (a.grade !== b.grade) return a.grade - b.grade;
+        return (a.section || '').localeCompare(b.section || '');
+      });
+      setClassrooms(classroomData);
     });
     return () => unsubscribe();
-  }, []);
+  }, [profile?.uid]);
 
   useEffect(() => {
-    if (selectedClass) {
-      const q = query(collection(db, 'students'), where('classroomId', '==', selectedClass.id));
+    if (selectedClass && profile?.uid) {
+      const q = query(
+        collection(db, 'students'),
+        where('classroomId', '==', selectedClass.id),
+        where('ownerUid', '==', profile.uid)
+      );
       const unsubscribe = onSnapshot(q, (snap) => {
         const classStudents = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Student));
+        // Sort students alphabetically by name
+        classStudents.sort((a, b) => a.name.localeCompare(b.name));
         setStudents(classStudents);
         
         // Initialize attendance if not already set by existing record
@@ -43,15 +61,16 @@ export default function Attendance({ profile }: AttendanceProps) {
       });
       return () => unsubscribe();
     }
-  }, [selectedClass, existingRecordId]);
+  }, [selectedClass, existingRecordId, profile?.uid]);
 
   useEffect(() => {
     async function checkExisting() {
-      if (selectedClass && date) {
+      if (selectedClass && date && profile?.uid) {
         const q = query(
           collection(db, 'attendance'), 
           where('classroomId', '==', selectedClass.id),
-          where('date', '==', date)
+          where('date', '==', date),
+          where('teacherUid', '==', profile.uid)
         );
         const snap = await getDocs(q);
         if (!snap.empty) {
@@ -68,7 +87,7 @@ export default function Attendance({ profile }: AttendanceProps) {
       }
     }
     checkExisting();
-  }, [selectedClass, date, students.length]);
+  }, [selectedClass, date, students.length, profile?.uid]);
 
   const handleStatusChange = (studentId: string, status: 'present' | 'absent' | 'late') => {
     setAttendance(prev => ({ ...prev, [studentId]: status }));
@@ -99,6 +118,13 @@ export default function Attendance({ profile }: AttendanceProps) {
       setIsSaving(false);
     }
   };
+
+  const normalizedSearchTerm = searchTerm.trim().toLowerCase();
+  const filteredStudents = students.filter((student) => {
+    if (!normalizedSearchTerm) return true;
+    const searchable = `${student.name || ''} ${student.studentId || ''}`.toLowerCase();
+    return searchable.includes(normalizedSearchTerm);
+  });
 
   return (
     <div className="space-y-6">
@@ -142,7 +168,7 @@ export default function Attendance({ profile }: AttendanceProps) {
               <div>
                 <h3 className="font-bold text-slate-900 text-lg">Grade {selectedClass.grade}{selectedClass.section ? ` (Section ${selectedClass.section})` : ''}</h3>
                 <p className="text-sm font-medium text-slate-500 mt-0.5">
-                  {students.length} Students • {new Date(date).toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+                  {filteredStudents.length} Students • {new Date(date).toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
                 </p>
                 <div className="flex flex-wrap gap-1.5 mt-2">
                   {(selectedClass.subjects || []).map((s, i) => (
@@ -171,7 +197,7 @@ export default function Attendance({ profile }: AttendanceProps) {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {students.map((student) => (
+                {filteredStudents.map((student) => (
                   <tr key={student.id} className="hover:bg-slate-50 transition-colors group">
                     <td className="px-6 py-4 font-semibold text-slate-900">{student.name}</td>
                     <td className="px-6 py-4 text-sm font-mono text-slate-500">{student.studentId}</td>
@@ -206,9 +232,11 @@ export default function Attendance({ profile }: AttendanceProps) {
             </table>
           </div>
 
-          {students.length === 0 && (
+          {filteredStudents.length === 0 && (
             <div className="p-20 text-center">
-              <p className="text-slate-500 font-medium">No students found in this classroom.</p>
+              <p className="text-slate-500 font-medium">
+                {normalizedSearchTerm ? 'No students match your search in this classroom.' : 'No students found in this classroom.'}
+              </p>
             </div>
           )}
         </div>

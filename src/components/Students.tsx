@@ -1,17 +1,26 @@
 import React, { useState, useEffect } from 'react';
 import { collection, onSnapshot, addDoc, doc, updateDoc, deleteDoc, query, where } from 'firebase/firestore';
 import { db } from '../firebase';
-import { Student, Classroom } from '../types';
+import { Student, Classroom, UserProfile } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 import { Plus, Search, MoreHorizontal, UserPlus, X, Edit2, Trash2, Filter } from 'lucide-react';
 import ConfirmModal from './ConfirmModal';
 
-export default function Students() {
+interface StudentsProps {
+  profile: UserProfile | null;
+  navSearchTerm: string;
+}
+
+export default function Students({ profile, navSearchTerm }: StudentsProps) {
   const [students, setStudents] = useState<Student[]>([]);
   const [classrooms, setClassrooms] = useState<Classroom[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingStudent, setEditingStudent] = useState<Student | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
+
+  const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setSearchTerm(e.target.value);
+  };
   const [filterClass, setFilterClass] = useState('');
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
 
@@ -25,20 +34,35 @@ export default function Students() {
   });
 
   useEffect(() => {
-    const unsubStudents = onSnapshot(collection(db, 'students'), (snap) => {
+    if (!profile?.uid) {
+      setStudents([]);
+      setClassrooms([]);
+      return;
+    }
+
+    const studentQuery = query(collection(db, 'students'), where('ownerUid', '==', profile.uid));
+    const unsubStudents = onSnapshot(studentQuery, (snap) => {
       setStudents(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Student)));
     });
-    const unsubClasses = onSnapshot(collection(db, 'classrooms'), (snap) => {
-      setClassrooms(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Classroom)));
+
+    const classQuery = query(collection(db, 'classrooms'), where('teacherUid', '==', profile.uid));
+    const unsubClasses = onSnapshot(classQuery, (snap) => {
+      const classroomData = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Classroom));
+      classroomData.sort((a, b) => {
+        if (a.grade !== b.grade) return a.grade - b.grade;
+        return (a.section || '').localeCompare(b.section || '');
+      });
+      setClassrooms(classroomData);
     });
     return () => {
       unsubStudents();
       unsubClasses();
     };
-  }, []);
+  }, [profile?.uid]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!profile?.uid) return;
     try {
       const dataToSave = { ...formData };
       if (!dataToSave.email) delete (dataToSave as any).email;
@@ -46,7 +70,10 @@ export default function Students() {
       if (editingStudent) {
         await updateDoc(doc(db, 'students', editingStudent.id), dataToSave);
       } else {
-        await addDoc(collection(db, 'students'), dataToSave);
+        await addDoc(collection(db, 'students'), {
+          ...dataToSave,
+          ownerUid: profile.uid
+        });
       }
       setIsModalOpen(false);
       setEditingStudent(null);
@@ -78,9 +105,13 @@ export default function Students() {
     }
   };
 
+  const localSearch = searchTerm.trim().toLowerCase();
+  const navbarSearch = navSearchTerm.trim().toLowerCase();
+  const effectiveSearch = localSearch || navbarSearch;
+
   const filteredStudents = students.filter(s => {
-    const matchesSearch = s.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-                         s.studentId.toLowerCase().includes(searchTerm.toLowerCase());
+    const searchable = `${s.name || ''} ${s.studentId || ''} ${s.email || ''} ${s.status || ''}`.toLowerCase();
+    const matchesSearch = effectiveSearch ? searchable.includes(effectiveSearch) : true;
     const matchesClass = filterClass ? s.classroomId === filterClass : true;
     return matchesSearch && matchesClass;
   });
@@ -120,7 +151,7 @@ export default function Students() {
             type="text" 
             placeholder="Search by name or ID..." 
             value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
+            onChange={handleSearchChange}
             className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
           />
         </div>

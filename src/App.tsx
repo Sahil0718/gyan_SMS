@@ -31,6 +31,7 @@ import {
   LogIn,
   Plus,
   Search,
+  X,
   ChevronRight,
   UserCircle,
   AlertCircle,
@@ -62,6 +63,11 @@ export default function App() {
   const [activeView, setActiveView] = useState<View>('dashboard');
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
+  const [globalSearch, setGlobalSearch] = useState('');
+
+  useEffect(() => {
+    setGlobalSearch('');
+  }, [activeView]);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
@@ -254,10 +260,10 @@ export default function App() {
   return (
     <div className="min-h-screen bg-slate-50 flex text-slate-900 font-sans">
       {/* Sidebar */}
-      <aside className={`bg-white border-r border-slate-200 transition-all duration-300 flex flex-col ${isSidebarOpen ? 'w-72' : 'w-20'} z-20 relative`}>
+      <aside className={`bg-white border-r border-slate-200 transition-all duration-300 flex flex-col ${isSidebarOpen ? 'w-80' : 'w-20'} z-20 relative`}>
         <div className="h-20 flex items-center gap-3 px-6 border-b border-slate-100">
           <div className="w-8 h-8 bg-red-600 rounded-lg flex items-center justify-center text-white font-display font-bold shrink-0 shadow-sm">G</div>
-          {isSidebarOpen && <span className="font-display font-bold text-lg text-slate-900 tracking-tight whitespace-nowrap overflow-hidden">Gyan Teaching Fellowship</span>}
+          {isSidebarOpen && <span className="font-display font-bold text-lg text-slate-900 tracking-tight">Gyan Teaching Fellowship</span>}
         </div>
 
         <nav className="flex-1 py-6 px-4 space-y-1 overflow-y-auto">
@@ -318,9 +324,19 @@ export default function App() {
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
               <input
                 type="text"
+                value={globalSearch}
+                onChange={(e) => setGlobalSearch(e.target.value)}
                 placeholder="Search records..."
                 className="pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-full text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 w-64 transition-all"
               />
+              {globalSearch && (
+                <button 
+                  onClick={() => setGlobalSearch('')}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors"
+                >
+                  <X size={14} />
+                </button>
+              )}
             </div>
             <div className="text-sm font-medium text-slate-500 hidden sm:block">
               {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}
@@ -338,14 +354,14 @@ export default function App() {
               transition={{ duration: 0.2 }}
               className="max-w-6xl mx-auto"
             >
-              {activeView === 'dashboard' && <Dashboard profile={profile} setActiveView={setActiveView} />}
-              {activeView === 'classrooms' && <Classrooms profile={profile} />}
-              {activeView === 'students' && <Students />}
-              {activeView === 'attendance' && <Attendance profile={profile} />}
-              {activeView === 'teaching' && <TeachingLogs profile={profile} />}
-              {activeView === 'mentoring' && <MentoringLogs profile={profile} />}
-              {activeView === 'progress' && <ProgressReports profile={profile} />}
-              {activeView === 'reflections' && <Reflections profile={profile} />}
+              {activeView === 'dashboard' && <Dashboard profile={profile} setActiveView={setActiveView} searchTerm={globalSearch} onSearch={setGlobalSearch} />}
+              {activeView === 'classrooms' && <Classrooms profile={profile} searchTerm={globalSearch} />}
+              {activeView === 'students' && <Students profile={profile} navSearchTerm={globalSearch} />}
+              {activeView === 'attendance' && <Attendance profile={profile} searchTerm={globalSearch} />}
+              {activeView === 'teaching' && <TeachingLogs profile={profile} searchTerm={globalSearch} onSearch={setGlobalSearch} />}
+              {activeView === 'mentoring' && <MentoringLogs profile={profile} searchTerm={globalSearch} onSearch={setGlobalSearch} />}
+              {activeView === 'progress' && <ProgressReports profile={profile} searchTerm={globalSearch} />}
+              {activeView === 'reflections' && <Reflections profile={profile} searchTerm={globalSearch} />}
             </motion.div>
           </AnimatePresence>
         </div>

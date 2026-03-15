@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { collection, onSnapshot, addDoc, query, orderBy } from 'firebase/firestore';
+import { collection, onSnapshot, addDoc, query, orderBy, where } from 'firebase/firestore';
 import { db } from '../firebase';
 import { ProgressReport, Student, Classroom, UserProfile } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
@@ -7,13 +7,24 @@ import { Plus, TrendingUp, Calendar, X, User, Award } from 'lucide-react';
 
 interface Props {
   profile: UserProfile | null;
+  searchTerm: string;
 }
 
-export default function ProgressReports({ profile }: Props) {
+export default function ProgressReports({ profile, searchTerm }: Props) {
   const [reports, setReports] = useState<ProgressReport[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
   const [classrooms, setClassrooms] = useState<Classroom[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
+
+  const normalizedSearchTerm = (searchTerm || '').trim().toLowerCase();
+
+  const filteredReports = reports.filter(report => {
+    const student = students.find(s => s.id === report.studentUid);
+    if (!normalizedSearchTerm) return true;
+    return (student?.name || '').toLowerCase().includes(normalizedSearchTerm) ||
+           (report.academicPerformance || '').toLowerCase().includes(normalizedSearchTerm) ||
+           (report.behavioralNotes || '').toLowerCase().includes(normalizedSearchTerm);
+  });
 
   const [formData, setFormData] = useState({
     studentUid: '',
@@ -25,14 +36,27 @@ export default function ProgressReports({ profile }: Props) {
   });
 
   useEffect(() => {
-    const q = query(collection(db, 'progressReports'), orderBy('date', 'desc'));
+    if (!profile?.uid) {
+      setReports([]);
+      setStudents([]);
+      setClassrooms([]);
+      return;
+    }
+
+    const q = query(
+      collection(db, 'progressReports'),
+      where('ownerUid', '==', profile.uid),
+      orderBy('date', 'desc')
+    );
     const unsubscribe = onSnapshot(q, (snap) => {
       setReports(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as ProgressReport)));
     });
-    const unsubStudents = onSnapshot(collection(db, 'students'), (snap) => {
+    const studentsQuery = query(collection(db, 'students'), where('ownerUid', '==', profile.uid));
+    const unsubStudents = onSnapshot(studentsQuery, (snap) => {
       setStudents(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Student)));
     });
-    const unsubClasses = onSnapshot(collection(db, 'classrooms'), (snap) => {
+    const classesQuery = query(collection(db, 'classrooms'), where('teacherUid', '==', profile.uid));
+    const unsubClasses = onSnapshot(classesQuery, (snap) => {
       setClassrooms(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Classroom)));
     });
     return () => {
@@ -40,13 +64,15 @@ export default function ProgressReports({ profile }: Props) {
       unsubStudents();
       unsubClasses();
     };
-  }, []);
+  }, [profile?.uid]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!profile?.uid) return;
     try {
       await addDoc(collection(db, 'progressReports'), {
         ...formData,
+        ownerUid: profile.uid,
         date: new Date(formData.date).toISOString()
       });
       setIsModalOpen(false);
@@ -73,7 +99,7 @@ export default function ProgressReports({ profile }: Props) {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {reports.map((report) => {
+        {filteredReports.map((report) => {
           const student = students.find(s => s.id === report.studentUid);
           const classroom = classrooms.find(c => c.id === student?.classroomId);
           return (
@@ -129,7 +155,7 @@ export default function ProgressReports({ profile }: Props) {
             </motion.div>
           );
         })}
-        {reports.length === 0 && (
+        {filteredReports.length === 0 && (
           <div className="col-span-full bg-white rounded-2xl border border-slate-200 p-12 text-center text-slate-500 font-medium">
             No progress reports recorded yet.
           </div>

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { collection, onSnapshot, addDoc, query, orderBy } from 'firebase/firestore';
+import { collection, onSnapshot, addDoc, query, orderBy, where } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Reflection, UserProfile } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
@@ -7,11 +7,20 @@ import { Plus, ClipboardList, Calendar, X, Sparkles, Target } from 'lucide-react
 
 interface Props {
   profile: UserProfile | null;
+  searchTerm: string;
 }
 
-export default function Reflections({ profile }: Props) {
+export default function Reflections({ profile, searchTerm }: Props) {
   const [reflections, setReflections] = useState<Reflection[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const normalizedSearchTerm = (searchTerm || '').trim().toLowerCase();
+
+  const filteredReflections = reflections.filter(reflection => 
+    !normalizedSearchTerm ||
+    (reflection.category || '').toLowerCase().includes(normalizedSearchTerm) || 
+    (reflection.content || '').toLowerCase().includes(normalizedSearchTerm) ||
+    (reflection.improvementPlan || '').toLowerCase().includes(normalizedSearchTerm)
+  );
 
   const [formData, setFormData] = useState({
     category: 'teaching' as const,
@@ -21,12 +30,21 @@ export default function Reflections({ profile }: Props) {
   });
 
   useEffect(() => {
-    const q = query(collection(db, 'reflections'), orderBy('date', 'desc'));
+    if (!profile?.uid) {
+      setReflections([]);
+      return;
+    }
+
+    const q = query(
+      collection(db, 'reflections'),
+      where('userUid', '==', profile.uid),
+      orderBy('date', 'desc')
+    );
     const unsubscribe = onSnapshot(q, (snap) => {
       setReflections(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Reflection)));
     });
     return () => unsubscribe();
-  }, []);
+  }, [profile?.uid]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -60,7 +78,7 @@ export default function Reflections({ profile }: Props) {
       </div>
 
       <div className="space-y-8">
-        {reflections.map((reflection) => (
+        {filteredReflections.map((reflection) => (
           <motion.div 
             key={reflection.id}
             initial={{ opacity: 0, y: 10 }}
@@ -103,7 +121,7 @@ export default function Reflections({ profile }: Props) {
             </div>
           </motion.div>
         ))}
-        {reflections.length === 0 && (
+        {filteredReflections.length === 0 && (
           <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center text-slate-500 font-medium">
             No reflections recorded yet.
           </div>

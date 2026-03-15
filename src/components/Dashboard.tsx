@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { collection, query, onSnapshot, limit, orderBy } from 'firebase/firestore';
+import { collection, query, onSnapshot, limit, orderBy, where } from 'firebase/firestore';
 import { db } from '../firebase';
 import { UserProfile, Student, TeachingLog, MentoringLog } from '../types';
 import { motion } from 'motion/react';
@@ -19,9 +19,11 @@ import {
 interface DashboardProps {
   profile: UserProfile | null;
   setActiveView: (view: any) => void;
+  searchTerm: string;
+  onSearch: (term: string) => void;
 }
 
-export default function Dashboard({ profile, setActiveView }: DashboardProps) {
+export default function Dashboard({ profile, setActiveView, searchTerm, onSearch }: DashboardProps) {
   const [stats, setStats] = useState({
     students: 0,
     teachingLogs: 0,
@@ -29,34 +31,82 @@ export default function Dashboard({ profile, setActiveView }: DashboardProps) {
     classrooms: 0
   });
   const [recentLogs, setRecentLogs] = useState<TeachingLog[]>([]);
+  const [students, setStudents] = useState<Student[]>([]);
+
+  const normalizedSearchTerm = searchTerm.trim().toLowerCase();
+  const isSearching = normalizedSearchTerm.length > 0;
+
+  const getSearchableText = (log: TeachingLog) => {
+    const studentNames = (log.studentIds || [])
+      .map((studentId) => students.find((student) => student.id === studentId)?.name || '')
+      .join(' ');
+
+    return [
+      log.topic || '',
+      log.subject || '',
+      log.notes || '',
+      studentNames
+    ]
+      .join(' ')
+      .toLowerCase();
+  };
+
+  const filteredRecentLogs = recentLogs.filter((log) => getSearchableText(log).includes(normalizedSearchTerm));
+  const filteredStudents = students.filter((student) => {
+    if (!normalizedSearchTerm) return false;
+    const searchable = `${student.name || ''} ${student.studentId || ''} ${student.email || ''}`.toLowerCase();
+    return searchable.includes(normalizedSearchTerm);
+  });
+  const totalSearchResults = filteredRecentLogs.length + filteredStudents.length;
+  const visibleLogs = isSearching ? filteredRecentLogs : recentLogs.slice(0, 5);
 
   useEffect(() => {
-    const unsubStudents = onSnapshot(collection(db, 'students'), (snap) => {
+    if (!profile?.uid) {
+      setStats({ students: 0, teachingLogs: 0, mentoringLogs: 0, classrooms: 0 });
+      setRecentLogs([]);
+      setStudents([]);
+      return;
+    }
+
+    const studentsQuery = query(collection(db, 'students'), where('ownerUid', '==', profile.uid));
+    const unsubStudentsCount = onSnapshot(studentsQuery, (snap) => {
       setStats(prev => ({ ...prev, students: snap.size }));
     });
-    const unsubTeaching = onSnapshot(collection(db, 'teachingLogs'), (snap) => {
+    const teachingQuery = query(collection(db, 'teachingLogs'), where('teacherUid', '==', profile.uid));
+    const unsubTeaching = onSnapshot(teachingQuery, (snap) => {
       setStats(prev => ({ ...prev, teachingLogs: snap.size }));
     });
-    const unsubMentoring = onSnapshot(collection(db, 'mentoringLogs'), (snap) => {
+    const mentoringQuery = query(collection(db, 'mentoringLogs'), where('mentorUid', '==', profile.uid));
+    const unsubMentoring = onSnapshot(mentoringQuery, (snap) => {
       setStats(prev => ({ ...prev, mentoringLogs: snap.size }));
     });
-    const unsubClassrooms = onSnapshot(collection(db, 'classrooms'), (snap) => {
+    const classroomsQuery = query(collection(db, 'classrooms'), where('teacherUid', '==', profile.uid));
+    const unsubClassrooms = onSnapshot(classroomsQuery, (snap) => {
       setStats(prev => ({ ...prev, classrooms: snap.size }));
     });
 
-    const q = query(collection(db, 'teachingLogs'), orderBy('date', 'desc'), limit(5));
+    const q = query(
+      collection(db, 'teachingLogs'),
+      where('teacherUid', '==', profile.uid),
+      orderBy('date', 'desc'),
+      limit(100)
+    );
     const unsubRecent = onSnapshot(q, (snap) => {
       setRecentLogs(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as TeachingLog)));
     });
+    const unsubStudentsList = onSnapshot(studentsQuery, (snap) => {
+      setStudents(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Student)));
+    });
 
     return () => {
-      unsubStudents();
+      unsubStudentsCount();
       unsubTeaching();
       unsubMentoring();
       unsubClassrooms();
       unsubRecent();
+      unsubStudentsList();
     };
-  }, []);
+  }, [profile?.uid]);
 
   const cards = [
     { id: 'classrooms', label: 'Classrooms', value: stats.classrooms, icon: GraduationCap, color: 'bg-blue-50 text-blue-600', border: 'border-blue-100' },
@@ -100,16 +150,41 @@ export default function Dashboard({ profile, setActiveView }: DashboardProps) {
         {/* Recent Activity */}
         <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
           <div className="flex items-center justify-between mb-6">
-            <h3 className="font-display font-bold text-lg text-slate-900">Recent Teaching Logs</h3>
+            <h3 className="font-display font-bold text-lg text-slate-900">
+              {isSearching ? `Search Results (${totalSearchResults})` : 'Recent Teaching Logs'}
+            </h3>
             <button 
-              onClick={() => setActiveView('teaching')}
+              onClick={() => setActiveView(isSearching ? 'students' : 'teaching')}
               className="text-sm font-medium text-blue-600 hover:text-blue-700 transition-colors flex items-center gap-1"
             >
-              View All <ChevronRight size={16} />
+              {isSearching ? 'View Students' : 'View All'} <ChevronRight size={16} />
             </button>
           </div>
           <div className="space-y-4">
-            {recentLogs.length > 0 ? recentLogs.map((log) => (
+            {isSearching && filteredStudents.length > 0 && (
+              <div className="space-y-2">
+                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Students</p>
+                {filteredStudents.slice(0, 3).map((student) => (
+                  <div key={student.id} className="flex gap-4 items-start p-4 rounded-xl hover:bg-slate-50 transition-colors border border-transparent hover:border-slate-100">
+                    <div className="p-2.5 bg-slate-100 text-slate-600 rounded-xl shrink-0">
+                      <Users size={18} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold text-slate-900 truncate">{student.name}</p>
+                      <p className="text-xs font-medium text-slate-500 mt-0.5">
+                        ID: {student.studentId || 'N/A'}{student.email ? ` • ${student.email}` : ''}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {isSearching && filteredStudents.length > 0 && filteredRecentLogs.length > 0 && (
+              <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Teaching Logs</p>
+            )}
+
+            {visibleLogs.length > 0 ? visibleLogs.map((log) => (
               <div key={log.id} className="flex gap-4 items-start p-4 rounded-xl hover:bg-slate-50 transition-colors border border-transparent hover:border-slate-100">
                 <div className="p-2.5 bg-blue-50 text-blue-600 rounded-xl shrink-0">
                   <Clock size={18} />
@@ -124,7 +199,9 @@ export default function Dashboard({ profile, setActiveView }: DashboardProps) {
               </div>
             )) : (
               <div className="text-center py-8">
-                <p className="text-sm text-slate-400 font-medium">No recent activity found.</p>
+                <p className="text-sm text-slate-400 font-medium">
+                  {isSearching ? 'No matching records found.' : 'No recent activity found.'}
+                </p>
               </div>
             )}
           </div>

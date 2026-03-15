@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { collection, onSnapshot, addDoc, deleteDoc, doc, query, orderBy } from 'firebase/firestore';
+import { collection, onSnapshot, addDoc, deleteDoc, doc, query, where } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Classroom, UserProfile } from '../types';
 import { Plus, Trash2, Users, GraduationCap } from 'lucide-react';
@@ -8,9 +8,10 @@ import ConfirmModal from './ConfirmModal';
 
 interface ClassroomsProps {
   profile: UserProfile | null;
+  searchTerm: string;
 }
 
-export default function Classrooms({ profile }: ClassroomsProps) {
+export default function Classrooms({ profile, searchTerm }: ClassroomsProps) {
   const [classrooms, setClassrooms] = useState<Classroom[]>([]);
   const [isAdding, setIsAdding] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
@@ -21,12 +22,23 @@ export default function Classrooms({ profile }: ClassroomsProps) {
   });
 
   useEffect(() => {
-    const q = query(collection(db, 'classrooms'), orderBy('grade', 'asc'), orderBy('section', 'asc'));
-    const unsubscribe = onSnapshot(q, (snap) => {
-      setClassrooms(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Classroom)));
+    if (!profile?.uid) {
+      setClassrooms([]);
+      return;
+    }
+
+    const classroomsQuery = query(collection(db, 'classrooms'), where('teacherUid', '==', profile.uid));
+    const unsubscribe = onSnapshot(classroomsQuery, (snap) => {
+      const classroomData = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Classroom));
+      // Sort by grade (asc) then section (asc) in memory
+      classroomData.sort((a, b) => {
+        if (a.grade !== b.grade) return a.grade - b.grade;
+        return (a.section || '').localeCompare(b.section || '');
+      });
+      setClassrooms(classroomData);
     });
     return () => unsubscribe();
-  }, []);
+  }, [profile?.uid]);
 
   const handleAddClass = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -56,6 +68,19 @@ export default function Classrooms({ profile }: ClassroomsProps) {
       console.error("Error deleting classroom:", error);
     }
   };
+
+  const normalizedSearchTerm = searchTerm.trim().toLowerCase();
+  const filteredClassrooms = classrooms.filter((classroom) => {
+    if (!normalizedSearchTerm) return true;
+    const searchable = [
+      `grade ${classroom.grade}`,
+      classroom.section || '',
+      ...(classroom.subjects || [])
+    ]
+      .join(' ')
+      .toLowerCase();
+    return searchable.includes(normalizedSearchTerm);
+  });
 
   return (
     <div className="space-y-6">
@@ -129,7 +154,7 @@ export default function Classrooms({ profile }: ClassroomsProps) {
       )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {classrooms.map((classroom) => (
+        {filteredClassrooms.map((classroom) => (
           <div key={classroom.id} className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm hover:shadow-md hover:border-blue-100 transition-all group">
             <div className="flex justify-between items-start mb-4">
               <div className="p-3 bg-blue-50 text-blue-600 rounded-xl group-hover:scale-110 transition-transform">
@@ -165,10 +190,12 @@ export default function Classrooms({ profile }: ClassroomsProps) {
         ))}
       </div>
 
-      {classrooms.length === 0 && !isAdding && (
+      {filteredClassrooms.length === 0 && !isAdding && (
         <div className="text-center py-20 bg-white rounded-2xl border border-slate-200 border-dashed">
           <GraduationCap className="mx-auto text-slate-300 mb-4" size={48} />
-          <p className="text-slate-500 font-medium">No classrooms defined yet. Add your first grade level to begin.</p>
+          <p className="text-slate-500 font-medium">
+            {normalizedSearchTerm ? 'No classrooms match your search.' : 'No classrooms defined yet. Add your first grade level to begin.'}
+          </p>
         </div>
       )}
     </div>

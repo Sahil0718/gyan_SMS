@@ -1,20 +1,37 @@
 import React, { useState, useEffect } from 'react';
-import { collection, onSnapshot, addDoc, updateDoc, doc, query, orderBy } from 'firebase/firestore';
+import { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, query, orderBy, where } from 'firebase/firestore';
 import { db } from '../firebase';
 import { TeachingLog, Student, Classroom, UserProfile } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
-import { Plus, BookOpen, Calendar, X, Users as UsersIcon, Check, Edit2 } from 'lucide-react';
+import { Plus, BookOpen, Calendar, X, Users as UsersIcon, Check, Edit2, Trash2 } from 'lucide-react';
+import ConfirmModal from './ConfirmModal';
 
 interface Props {
   profile: UserProfile | null;
+  searchTerm: string;
+  onSearch: (term: string) => void;
 }
 
-export default function TeachingLogs({ profile }: Props) {
+export default function TeachingLogs({ profile, searchTerm, onSearch }: Props) {
   const [logs, setLogs] = useState<TeachingLog[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
   const [classrooms, setClassrooms] = useState<Classroom[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+
+  const filteredLogs = logs.filter(log => {
+    const textMatch = (log.topic || '').toLowerCase().includes(searchTerm.toLowerCase()) || 
+                      (log.notes || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+                      (log.subject || '').toLowerCase().includes(searchTerm.toLowerCase());
+    
+    const studentMatch = log.studentIds.some(id => {
+      const student = students.find(s => s.id === id);
+      return (student?.name || '').toLowerCase().includes(searchTerm.toLowerCase());
+    });
+    
+    return textMatch || studentMatch;
+  });
 
   const [formData, setFormData] = useState({
     classroomId: '',
@@ -26,22 +43,40 @@ export default function TeachingLogs({ profile }: Props) {
   });
 
   useEffect(() => {
-    const q = query(collection(db, 'teachingLogs'), orderBy('date', 'desc'));
+    if (!profile?.uid) {
+      setLogs([]);
+      setStudents([]);
+      setClassrooms([]);
+      return;
+    }
+
+    const q = query(
+      collection(db, 'teachingLogs'),
+      where('teacherUid', '==', profile.uid),
+      orderBy('date', 'desc')
+    );
     const unsubscribe = onSnapshot(q, (snap) => {
       setLogs(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as TeachingLog)));
     });
-    const unsubStudents = onSnapshot(collection(db, 'students'), (snap) => {
+    const studentsQuery = query(collection(db, 'students'), where('ownerUid', '==', profile.uid));
+    const unsubStudents = onSnapshot(studentsQuery, (snap) => {
       setStudents(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Student)));
     });
-    const unsubClasses = onSnapshot(collection(db, 'classrooms'), (snap) => {
-      setClassrooms(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Classroom)));
+    const classesQuery = query(collection(db, 'classrooms'), where('teacherUid', '==', profile.uid));
+    const unsubClasses = onSnapshot(classesQuery, (snap) => {
+      const classroomData = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Classroom));
+      classroomData.sort((a, b) => {
+        if (a.grade !== b.grade) return a.grade - b.grade;
+        return (a.section || '').localeCompare(b.section || '');
+      });
+      setClassrooms(classroomData);
     });
     return () => {
       unsubscribe();
       unsubStudents();
       unsubClasses();
     };
-  }, []);
+  }, [profile?.uid]);
 
   const selectedClass = classrooms.find(c => c.id === formData.classroomId);
   const filteredStudents = students.filter(s => s.classroomId === formData.classroomId);
@@ -49,17 +84,18 @@ export default function TeachingLogs({ profile }: Props) {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
+      const payload = {
+        ...formData,
+        teacherUid: profile?.uid,
+        date: new Date(formData.date).toISOString()
+      };
+
       if (editingId) {
-        await updateDoc(doc(db, 'teachingLogs', editingId), {
-          ...formData,
-          date: new Date(formData.date).toISOString()
-        });
+        await updateDoc(doc(db, 'teachingLogs', editingId), payload);
+        setLogs((prev) => prev.map((log) => (log.id === editingId ? { ...log, ...payload } as TeachingLog : log)));
       } else {
-        await addDoc(collection(db, 'teachingLogs'), {
-          ...formData,
-          teacherUid: profile?.uid,
-          date: new Date(formData.date).toISOString()
-        });
+        const docRef = await addDoc(collection(db, 'teachingLogs'), payload);
+        setLogs((prev) => [{ id: docRef.id, ...payload } as TeachingLog, ...prev]);
       }
       setIsModalOpen(false);
       setEditingId(null);
@@ -88,6 +124,17 @@ export default function TeachingLogs({ profile }: Props) {
     setIsModalOpen(true);
   };
 
+  const handleDelete = async () => {
+    if (!confirmDelete) return;
+    try {
+      await deleteDoc(doc(db, 'teachingLogs', confirmDelete));
+      setLogs((prev) => prev.filter((log) => log.id !== confirmDelete));
+      setConfirmDelete(null);
+    } catch (error) {
+      console.error("Error deleting log:", error);
+    }
+  };
+
   const toggleStudent = (id: string) => {
     setFormData(prev => ({
       ...prev,
@@ -99,6 +146,13 @@ export default function TeachingLogs({ profile }: Props) {
 
   return (
     <div className="space-y-6">
+      <ConfirmModal 
+        isOpen={!!confirmDelete}
+        title="Delete Teaching Log"
+        message="Are you sure you want to delete this teaching log? This action cannot be undone."
+        onConfirm={handleDelete}
+        onCancel={() => setConfirmDelete(null)}
+      />
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-display font-bold text-slate-900 tracking-tight">Teaching Documentation</h1>
@@ -114,7 +168,7 @@ export default function TeachingLogs({ profile }: Props) {
       </div>
 
       <div className="grid grid-cols-1 gap-6">
-        {logs.map((log) => {
+        {filteredLogs.map((log) => {
           const logClass = classrooms.find(c => c.id === (log as any).classroomId);
           return (
             <motion.div 
@@ -142,13 +196,22 @@ export default function TeachingLogs({ profile }: Props) {
                   {log.subject && <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5">{log.subject}</div>}
                   <div className="flex items-start justify-between gap-4">
                     <h3 className="text-xl font-bold text-slate-900">{log.topic}</h3>
-                    <button 
-                      onClick={() => handleEdit(log)}
-                      className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                      title="Edit Log"
-                    >
-                      <Edit2 size={18} />
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button 
+                        onClick={() => handleEdit(log)}
+                        className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                        title="Edit Log"
+                      >
+                        <Edit2 size={18} />
+                      </button>
+                      <button 
+                        onClick={() => setConfirmDelete(log.id)}
+                        className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                        title="Delete Log"
+                      >
+                        <Trash2 size={18} />
+                      </button>
+                    </div>
                   </div>
                 </div>
                 <p className="text-slate-600 text-sm leading-relaxed whitespace-pre-wrap">{log.notes}</p>
@@ -156,7 +219,7 @@ export default function TeachingLogs({ profile }: Props) {
             </motion.div>
           );
         })}
-        {logs.length === 0 && (
+        {filteredLogs.length === 0 && (
           <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center text-slate-500 font-medium">
             No teaching logs recorded yet.
           </div>
