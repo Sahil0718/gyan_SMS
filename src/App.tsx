@@ -110,12 +110,28 @@ export default function App() {
     if (isLoggingIn) return;
     setIsLoggingIn(true);
     const provider = new GoogleAuthProvider();
+    // Force select account is often better for testing/off the bat experience
+    provider.setCustomParameters({ prompt: 'select_account' });
+    
     try {
+      // In some cloud IDE environments (like Project IDX/Firebase Studio), 
+      // popups can be blocked or behave unexpectedly.
+      // signInWithPopup is generally fine for desktop, but if it fails,
+      // we check for specific environment constraints.
       await signInWithPopup(auth, provider);
     } catch (error: any) {
-      // Ignore cancellation errors as they are usually user-triggered or double-clicks
-      if (error.code !== 'auth/cancelled-popup-request' && error.code !== 'auth/popup-closed-by-user') {
-        console.error("Login failed:", error);
+      // Ignore cancellation errors
+      if (error.code === 'auth/cancelled-popup-request' || error.code === 'auth/popup-closed-by-user') {
+        return;
+      }
+      
+      console.error("Login failed:", error);
+      
+      // If popup is blocked or fails in a way that suggests a redirect might be needed
+      if (error.code === 'auth/popup-blocked') {
+        alert("Sign-in popup was blocked. Please allow popups for this site or try again.");
+      } else {
+        alert(`Login failed: ${error.message}. Make sure your domain is added to 'Authorized domains' in Firebase Console.`);
       }
     } finally {
       setIsLoggingIn(false);
