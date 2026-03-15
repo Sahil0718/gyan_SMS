@@ -192,7 +192,7 @@ export default function App() {
           <div className="p-8 md:p-12">
             <div className="flex flex-col items-center mb-10">
               <div className="flex items-center justify-center mb-6 w-full">
-                <IIDSLogo className="h-16 w-auto object-contain" />
+                <IIDSLogo className="h-16 w-auto object-contain mx-auto" />
               </div>
               <h1 className="text-4xl font-serif font-bold text-slate-900 text-center leading-tight">
                 Gyan Teaching <br />
