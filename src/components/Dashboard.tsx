@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { collection, query, onSnapshot, limit, orderBy, where } from 'firebase/firestore';
+import { collection, query, onSnapshot, limit, where } from 'firebase/firestore';
 import { db } from '../firebase';
 import { UserProfile, Student, TeachingLog, MentoringLog } from '../types';
 import { motion } from 'motion/react';
@@ -88,11 +88,12 @@ export default function Dashboard({ profile, setActiveView, searchTerm, onSearch
     const q = query(
       collection(db, 'teachingLogs'),
       where('teacherUid', '==', profile.uid),
-      orderBy('date', 'desc'),
       limit(100)
     );
     const unsubRecent = onSnapshot(q, (snap) => {
-      setRecentLogs(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as TeachingLog)));
+      const logData = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as TeachingLog));
+      logData.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+      setRecentLogs(logData);
     });
     const unsubStudentsList = onSnapshot(studentsQuery, (snap) => {
       setStudents(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Student)));

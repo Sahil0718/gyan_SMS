@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, query, orderBy, where } from 'firebase/firestore';
+import { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, query, where } from 'firebase/firestore';
 import { db } from '../firebase';
 import { TeachingLog, Student, Classroom, UserProfile } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
@@ -52,11 +52,12 @@ export default function TeachingLogs({ profile, searchTerm, onSearch }: Props) {
 
     const q = query(
       collection(db, 'teachingLogs'),
-      where('teacherUid', '==', profile.uid),
-      orderBy('date', 'desc')
+      where('teacherUid', '==', profile.uid)
     );
     const unsubscribe = onSnapshot(q, (snap) => {
-      setLogs(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as TeachingLog)));
+      const logData = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as TeachingLog));
+      logData.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+      setLogs(logData);
     });
     const studentsQuery = query(collection(db, 'students'), where('ownerUid', '==', profile.uid));
     const unsubStudents = onSnapshot(studentsQuery, (snap) => {

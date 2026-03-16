@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { collection, onSnapshot, addDoc, query, where, getDocs, doc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, onSnapshot, addDoc, query, where, getDocs, doc, updateDoc, serverTimestamp, orderBy } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Classroom, Student, AttendanceRecord, UserProfile } from '../types';
-import { Calendar, Check, X, Clock, Save, ChevronLeft, ChevronRight, CheckCircle2 } from 'lucide-react';
+import { Calendar, Check, X, Clock, Save, ChevronLeft, ChevronRight, CheckCircle2, Download, FileSpreadsheet } from 'lucide-react';
 import { motion } from 'motion/react';
 import Toast from './Toast';
 
@@ -18,8 +18,10 @@ export default function Attendance({ profile, searchTerm }: AttendanceProps) {
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [attendance, setAttendance] = useState<{ [studentId: string]: 'present' | 'absent' | 'late' }>({});
   const [isSaving, setIsSaving] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
   const [existingRecordId, setExistingRecordId] = useState<string | null>(null);
   const [showToast, setShowToast] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
 
   useEffect(() => {
     if (!profile?.uid) {
@@ -111,11 +113,73 @@ export default function Attendance({ profile, searchTerm }: AttendanceProps) {
           createdAt: serverTimestamp()
         });
       }
+      setToastMessage("Attendance recorded successfully");
       setShowToast(true);
     } catch (error) {
       console.error("Error saving attendance:", error);
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handleExport = async () => {
+    if (!selectedClass || !profile) return;
+    setIsExporting(true);
+    
+    try {
+      // 1. Fetch all attendance records for this class
+      const q = query(
+        collection(db, 'attendance'),
+        where('classroomId', '==', selectedClass.id),
+        where('teacherUid', '==', profile.uid)
+      );
+      
+      const snap = await getDocs(q);
+      const records = snap.docs.map(doc => doc.data() as AttendanceRecord);
+      
+      if (records.length === 0) {
+        setToastMessage("No attendance records found to export");
+        setShowToast(true);
+        return;
+      }
+
+      // 2. Get unique dates and sort them
+      const dates = Array.from(new Set(records.map(r => r.date))).sort();
+      
+      // 3. Create CSV Header
+      let csvContent = "Student Name,Student ID," + dates.join(",") + "\n";
+      
+      // 4. Create CSV Rows for each student
+      students.forEach(student => {
+        let row = `"${student.name}","${student.studentId}"`;
+        
+        dates.forEach(date => {
+          const record = records.find(r => r.date === date);
+          const status = record?.statuses[student.id] || "N/A";
+          row += `,${status.charAt(0).toUpperCase() + status.slice(1)}`;
+        });
+        
+        csvContent += row + "\n";
+      });
+
+      // 5. Trigger download
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.setAttribute("href", url);
+      link.setAttribute("download", `Attendance_Grade_${selectedClass.grade}${selectedClass.section || ''}_${new Date().toISOString().split('T')[0]}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      
+      setToastMessage("Attendance report downloaded");
+      setShowToast(true);
+    } catch (error) {
+      console.error("Error exporting attendance:", error);
+      setToastMessage("Failed to export attendance");
+      setShowToast(true);
+    } finally {
+      setIsExporting(false);
     }
   };
 
@@ -130,7 +194,7 @@ export default function Attendance({ profile, searchTerm }: AttendanceProps) {
     <div className="space-y-6">
       <Toast 
         isVisible={showToast} 
-        message="Attendance recorded successfully" 
+        message={toastMessage} 
         onClose={() => setShowToast(false)} 
       />
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -139,6 +203,20 @@ export default function Attendance({ profile, searchTerm }: AttendanceProps) {
           <p className="text-slate-500 font-medium mt-1">Track daily presence for your classrooms.</p>
         </div>
         <div className="flex flex-col sm:flex-row gap-3">
+          {selectedClass && (
+            <button
+              onClick={handleExport}
+              disabled={isExporting}
+              className="flex items-center justify-center gap-2 bg-white border border-slate-200 text-slate-700 px-4 py-2.5 rounded-xl hover:bg-slate-50 transition-all font-medium shadow-sm disabled:opacity-50"
+            >
+              {isExporting ? (
+                <div className="w-4 h-4 border-2 border-slate-300 border-t-slate-600 rounded-full animate-spin" />
+              ) : (
+                <FileSpreadsheet size={18} className="text-emerald-600" />
+              )}
+              Export Report
+            </button>
+          )}
           <input 
             type="date" 
             value={date}
